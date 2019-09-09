@@ -18,7 +18,7 @@ class Data:
         return X, y
 
 
-class Process:
+class Processes:
     def __init__(self, size=5):
         self._size = size
         self._queue = []
@@ -44,13 +44,13 @@ class Process:
     @staticmethod
     def process_two(X, y):
         with ThreadPoolExecutor(max_workers=3) as pool:
-            pool.submit(Process().fit(X, y))
+            pool.submit(Processes().fit(X, y))
 
     def put(self, X, y):
         with self._full:
             while len(self._queue) >= self._size:
                 self._full.wait()
-            self._queue.append(Process().fit(X, y))
+            self._queue.append(Processes().fit(X, y))
             self._empty.notify()
 
     def get(self):
@@ -64,4 +64,4 @@ class Process:
     @staticmethod
     def process_three(X, y):
         with ThreadPoolExecutor(max_workers=3) as pool:
-            pool.submit(Process().put(X, y))
+            pool.submit(Processes().put(X, y))
