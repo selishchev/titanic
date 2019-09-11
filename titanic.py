@@ -3,6 +3,8 @@ from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 from concurrent.futures import ThreadPoolExecutor
 from threading import RLock, Condition
+from multiprocessing import Process
+import time
 
 
 class Data:
@@ -18,16 +20,19 @@ class Data:
         return X, y
 
 
-class Processes:
-    def __init__(self, size=5):
+class Processes(Process):
+    def __init__(self, size=5, ps=0):
+        super().__init__()
         self._size = size
         self._queue = []
         self._mutex = RLock()
         self._empty = Condition(self._mutex)
         self._full = Condition(self._mutex)
+        self.ps = ps
 
     @staticmethod
-    def fit(X, y):
+    def fit(X, y, ps):
+        t0 = time.time()
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
         clf_rf = RandomForestClassifier()
         params = {'n_estimators': range(20, 31, 2), 'criterion': ['gini', 'entropy'], 'max_depth': range(5, 16, 2)}
@@ -40,17 +45,18 @@ class Processes:
         feature_importances_df = pd.DataFrame({'features': list(X_train), 'feature_importances': feature_importances})
         print('Коэффициенты важности наблюдений о пассажирах:\n',
               feature_importances_df.sort_values('feature_importances', ascending=False))
+        print('Время выполнения процесса', ps, ':', time.time() - t0, '\n')
 
     @staticmethod
-    def process_two(X, y):
+    def process_two(X, y, ps):
         with ThreadPoolExecutor(max_workers=3) as pool:
-            pool.submit(Processes().fit(X, y))
+            pool.submit(Processes().fit(X, y, ps))
 
-    def put(self, X, y):
+    def put(self, X, y, ps):
         with self._full:
             while len(self._queue) >= self._size:
                 self._full.wait()
-            self._queue.append(Processes().fit(X, y))
+            self._queue.append(Processes().fit(X, y, ps))
             self._empty.notify()
 
     def get(self):
@@ -62,6 +68,23 @@ class Processes:
             return ret
 
     @staticmethod
-    def process_three(X, y):
+    def process_three(X, y, ps):
         with ThreadPoolExecutor(max_workers=3) as pool:
-            pool.submit(Processes().put(X, y))
+            pool.submit(Processes().put(X, y, ps))
+
+
+def main():
+    X, y = Data('train.csv').edit()
+    p1 = Process(target=Processes().fit, args=(X, y, 1))
+    p2 = Process(target=Processes().process_two, args=(X, y, 2))
+    p3 = Process(target=Processes().process_three, args=(X, y, 3))
+    p1.start()
+    p2.start()
+    p3.start()
+    p1.join()
+    p2.join()
+    p3.join()
+
+
+if __name__ == '__main__':
+    main()
